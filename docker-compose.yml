@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  gateway-api:
+    build: ./gateway-api
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./gateway-api/microservices:/app/microservices
+
+  web-ui:
+    build: ./web-ui
+    ports:
+      - "5173:5173"
+    depends_on:
+      - gateway-api
