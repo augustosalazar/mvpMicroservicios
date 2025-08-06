@@ -2,6 +2,7 @@ version: "3.8"
 
 services:
   db:
+    container_name: roble-db
     image: postgres:15
     environment:
       POSTGRES_DB: colegio
@@ -14,17 +15,24 @@ services:
       - "5432:5432"
 
   api:
+    container_name: roble-api
     build: ./api
     ports:
       - "3000:3000"
     depends_on:
       - db
     environment:
-      DB_HOST: db
+      DB_HOST: roble-db
       DB_PORT: 5432
       DB_USER: user
       DB_PASSWORD: pass
       DB_NAME: colegio
+    networks:
+      - mvp-net
 
 volumes:
   db_data:
+
+networks:
+  mvp-net:
+    external: true

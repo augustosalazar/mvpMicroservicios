@@ -1,73 +1,79 @@
 import express from "express";
-import bodyParser from "body-parser";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { exec } from "child_process";
 
+// Inicialización para usar __dirname con ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Ruta donde se guardarán los microservicios
+const DIRECTORIO_MICROSERVICIOS = path.join(
+  __dirname,
+  "microservices",
+  "ejecutar"
+);
+
+// Crear carpeta si no existe
+if (!fs.existsSync(DIRECTORIO_MICROSERVICIOS)) {
+  fs.mkdirSync(DIRECTORIO_MICROSERVICIOS, { recursive: true });
+}
+
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = 8080;
 
-const microservicesDir = path.join(__dirname, "microservices");
-if (!fs.existsSync(microservicesDir)) fs.mkdirSync(microservicesDir);
+app.use(express.json());
 
-app.use(bodyParser.json());
+// Endpoint para registrar un nuevo microservicio
+app.post("/microservicios", async (req, res) => {
+  const { nombre, codigo } = req.body;
 
-// Registro de microservicio dinámico
-app.post("/microservicios", (req, res) => {
-  const { name, code, endpoint } = req.body;
-  if (!name || !code || !endpoint) {
-    return res.status(400).json({ error: "Faltan parámetros requeridos." });
-  }
-
-  const filePath = path.join(microservicesDir, `${endpoint}.js`);
-  fs.writeFileSync(filePath, code);
-  res
-    .status(201)
-    .json({ message: "Microservicio registrado con éxito.", endpoint });
-});
-
-// Ejecutar microservicio
-app.get("/ejecutar/:endpoint", async (req, res) => {
-  const endpoint = req.params.endpoint;
-  const filePath = path.join(microservicesDir, `${endpoint}.js`);
-
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: "Microservicio no encontrado." });
+  if (!nombre || !codigo) {
+    return res
+      .status(400)
+      .json({ error: "Faltan parámetros: nombre y codigo" });
   }
 
   try {
-    const mod = await import(
-      `./microservices/${endpoint}.js?update=${Date.now()}`
-    );
-    if (typeof mod.default === "function") {
-      const result = await mod.default(req.query);
-      res.json({ result });
-    } else {
-      res
-        .status(500)
-        .json({
-          error: "El microservicio no exporta una función por defecto.",
-        });
-    }
+    const filePath = path.join(DIRECTORIO_MICROSERVICIOS, `${nombre}.js`);
+    fs.writeFileSync(filePath, codigo);
+    res.status(201).json({ mensaje: `Microservicio ${nombre} registrado` });
   } catch (err) {
-    res
-      .status(500)
-      .json({
-        error: "Error al ejecutar el microservicio.",
-        detail: err.message,
-      });
+    console.error("Error al guardar el microservicio:", err);
+    res.status(500).json({ error: "Error al registrar microservicio" });
   }
 });
 
-// Listar microservicios
+// Endpoint para ejecutar un microservicio dinámico
+app.all("/ms/:nombre", async (req, res) => {
+  const { nombre } = req.params;
+  const filePath = path.join(DIRECTORIO_MICROSERVICIOS, `${nombre}.js`);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: "Microservicio no encontrado" });
+  }
+
+  try {
+    const { default: ejecutar } = await import(
+      `file://${filePath}?update=${Date.now()}`
+    );
+    await ejecutar(req, res);
+  } catch (err) {
+    console.error("Error ejecutando el microservicio:", err);
+    res.status(500).json({ error: "Error ejecutando el microservicio" });
+  }
+});
+
+// Endpoint para listar microservicios creados
 app.get("/microservicios", (req, res) => {
-  const files = fs
-    .readdirSync(microservicesDir)
-    .filter((f) => f.endsWith(".js"));
-  res.json({ endpoints: files.map((f) => f.replace(".js", "")) });
+  try {
+    const archivos = fs.readdirSync(DIRECTORIO_MICROSERVICIOS);
+    const nombres = archivos.map((nombre) => nombre.replace(".js", ""));
+    res.json({ microservicios: nombres });
+  } catch (err) {
+    console.error("Error leyendo microservicios:", err);
+    res.status(500).json({ error: "No se pudieron leer los microservicios" });
+  }
 });
 
 app.listen(PORT, () => {
